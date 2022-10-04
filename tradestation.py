@@ -10,25 +10,16 @@ import pandas as pd
 import pytz
 import requests
 
-# Connect to Deta-Base
-
-deta = connect_db()
-config_db = deta.Base("config_db")
-ts_api = config_db.get("TS_API")['value']
-ts_secret = config_db.get("TS_SECRET")['value']
-ts_refresh = config_db.get("TS_REFRESH")['value']
-apply_real = bool(config_db.get("APPLY_REAL")['value'])
-
 # Global variables
 
 utc = pytz.timezone("UTC")
 local_timezone = pytz.timezone("US/Central")
-if apply_real:
-    ts_base = 'https://api.tradestation.com'
-    ts_account = config_db.get("TS_ACCOUNT")['value']
-else:
-    ts_base = 'https://sim-api.tradestation.com'
-    ts_acccount = config_db.get("TS_SIM_EQUITY")['value']
+ts_api = ""
+ts_secret = ""
+ts_refresh = ""
+apply_real = False
+ts_base = ""
+ts_account = 0
 
 # Helper functions
 
@@ -65,6 +56,33 @@ def find_atm(lst, val):
 # Core functions
 
 def ts_authenticate():
+
+    # Global variables
+
+    global ts_api
+    global ts_secret
+    global ts_refresh
+    global apply_real
+    global ts_base
+    global ts_account
+
+    # Connect to Deta-Base
+
+    deta = connect_db()
+    config_db = deta.Base("config_db")
+    ts_api = config_db.get("TS_API")['value']
+    ts_secret = config_db.get("TS_SECRET")['value']
+    ts_refresh = config_db.get("TS_REFRESH")['value']
+    apply_real = bool(config_db.get("APPLY_REAL")['value'])
+    if apply_real:
+        ts_base = 'https://api.tradestation.com'
+        ts_account = config_db.get("TS_ACCOUNT")['value']
+    else:
+        ts_base = 'https://sim-api.tradestation.com'
+        ts_account = config_db.get("TS_SIM_EQUITY")['value']
+
+    # Extract info
+
     ts_refresh_data = { 
         'grant_type': 'refresh_token', 
         'client_id': ts_api, 
@@ -162,25 +180,44 @@ def get_chain_ts(symbol="SPY", expiration=0, optionType="All", strikeProximity=2
     if not expiration:
         expiration = get_expirations_ts(symbol)[0]
     headers = ts_authenticate()
-    url = f'{ts_base}/v3/marketdata/stream/options/chains/{symbol}?expiration={expiration}'
-    url = f'{url}&strikeProximity={strikeProximity}&strikeRange=All&strikeInterval=2'
-    url = f'{url}&optionType={optionType}&enableGreeks={enableGreeks}'
-    strikes = get_strikes_ts(symbol, expiration)
-    r = requests.request("GET", url, headers = headers, stream=True)
-    chain = []
-    counter = 0
-    for line in r.iter_lines():
-        if len(chain) >= strikeProximity * 2:
-            return chain
-        elif line:
-            line_json = json.loads(line)
-            if "Strikes" in line_json:
-                strike = line_json["Strikes"][0]
-                if strike in strikes:
-                    chain.append(line_json)
-                    strikes.remove(strike)
-                    counter += 1
-            else:
-                print(line_json)
+    option_types = [optionType]
+    if "All" in option_types:
+        option_types = ["Call", "Put"]
+    calls, puts = [], []
+    for option_type in option_types:
+        strikes = get_strikes_ts(symbol, expiration)
+        url = f'{ts_base}/v3/marketdata/stream/options/chains/{symbol}?expiration={expiration}'
+        url = f'{url}&strikeProximity={strikeProximity}&strikeRange=All&strikeInterval=2'
+        url = f'{url}&optionType={option_type}&enableGreeks={enableGreeks}'
+        r = requests.request("GET", url, headers = headers, stream=True)
+        counter = 0
+        for line in r.iter_lines():
+            if line:
+                line_json = json.loads(line)
+                if len(calls) >= strikeProximity * 2 and option_type == "Call":
+                    break
+                elif len(puts) >= strikeProximity * 2 and option_type == "Put":
+                    break
+                elif "Heartbeat" in line_json:
+                    break
+                elif "Strikes" in line_json:
+                    strike = line_json["Strikes"][0]
+                    cp = line_json["Side"]
+                    if strike in strikes:
+                        if cp == "Call":
+                            calls.append(line_json)
+                        elif cp == "Put":
+                            puts.append(line_json)
+                        else:
+                            print("Error: Neither Call nor Put")
+                        strikes.remove(strike)
+                        counter += 1
+                else:
+                    print(line_json)
+    chain = {
+        "calls": calls,
+        "puts": puts
+    }
+    return chain
 
 # END

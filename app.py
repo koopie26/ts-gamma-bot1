@@ -81,8 +81,8 @@ if auth:
     authenticator.logout("Logout", "sidebar")
     expirations = get_expirations_ts()
     page_options = ["Chart"]
-    callput_options = ["Call", "Put"]
-    indicator_options = ["Gamma", "Bid", "Ask"]
+    callput_options = ["Call", "Put", "All"]
+    indicator_options = ["Gamma", "Ask", "Bid", "DailyOpenInterest", "Delta", "ImpliedVolatility", "Mid", "Rho", "Theta", "Vega", "Volume"]
     with st.sidebar:
 
         st.title(f"Welcome {name}")
@@ -100,7 +100,7 @@ if auth:
             selected_callput = st.radio(
                 label = "Type:",
                 options = callput_options,
-                index = 0
+                index = 2
             )
             selected_expiration = st.selectbox(
                 label = "Expiration:", 
@@ -127,37 +127,46 @@ if auth:
         if len(last.split(".")[1]) == 1:
             last = last + "0"
 
-        # Get chain and sort by strikes
-
-        chain = get_chain_ts(selected_ticker, selected_expiration, selected_callput)
-        strikes = [float(item['Strikes'][0]) for item in chain]
-        strikes_enum = [strike for strike in enumerate(strikes)]
-        strikes_enum_rev = [tuple(reversed(strike)) for strike in strikes_enum]
-        strikes_enum_rev_sort = sorted(strikes_enum_rev)
-        strikes = [strike[0] for strike in strikes_enum_rev_sort]
-        strikes_idx = [strike[1] for strike in strikes_enum_rev_sort]
-        chain1 = []
-        for i in range(len(chain)):
-            strike1 = chain[strikes_idx[i]]
-            chain1.append(strike1)
-        chain = chain1
-
         # Create Plotly chart from TDA market data
 
         fig = go.Figure()
 
-        for indicator in selected_indicators:
-            y_values = [float(item[indicator]) for item in chain]
-            fig.add_trace(go.Scatter(
-                x = pd.Series(strikes),
-                y = pd.Series(y_values),
-                name = indicator,
-            ))
+        # Get chain, sort by strikes, add to figure
+
+        chains = get_chain_ts(selected_ticker, selected_expiration, selected_callput)
+        calls = chains['calls']
+        puts = chains['puts']
+        callputs = [calls, puts]
+        count = 0
+        ext = "Call"
+        for chain in callputs:
+            if count == 1:
+                ext = "Put"
+            if chain != []:
+                strikes = [float(item['Strikes'][0]) for item in chain]
+                strikes_enum = [strike for strike in enumerate(strikes)]
+                strikes_enum_rev = [tuple(reversed(strike)) for strike in strikes_enum]
+                strikes_enum_rev_sort = sorted(strikes_enum_rev)
+                strikes = [strike[0] for strike in strikes_enum_rev_sort]
+                strikes_idx = [strike[1] for strike in strikes_enum_rev_sort]
+                chain1 = []
+                for i in range(len(chain)):
+                    strike1 = chain[strikes_idx[i]]
+                    chain1.append(strike1)
+                chain = chain1
+                for indicator in selected_indicators:
+                    y_values = [float(item[indicator]) for item in chain]
+                    fig.add_trace(go.Scatter(
+                        x = pd.Series(strikes),
+                        y = pd.Series(y_values),
+                        name = f"{indicator}, {ext}",
+                    ))
+            count += 1
         # fig.add_vline(x=last, annotation="Last")
         fig.update_layout(
             title = f'Plotly chart: {selected_ticker} ({last}), {selected_callput} chain for {selected_expiration} expiration date',
             height = 700,
-            yaxis_title = indicator,
+            yaxis_title = str(selected_indicators),
             xaxis_title = 'Strike',
             plot_bgcolor = 'gainsboro',
             annotations=[dict(x=last, y=0.99, yref='paper', text='Last', xanchor='left', showarrow=False, font_color="red")],
