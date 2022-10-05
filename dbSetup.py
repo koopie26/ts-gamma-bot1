@@ -11,6 +11,7 @@ import os
 deta = connect_db()
 config_db = deta.Base("config_db")
 users_db = deta.Base("users_db")
+settings_db = deta.Base("settings_db")
 
 # Fetch existing entries in config_db and delete them
 
@@ -26,11 +27,18 @@ users_db = deta.Base("users_db")
 # for key in keys:
 #     users_db.delete(key)
 
+# Fetch existing entries in settings_db and delete them
+
+# items = settings_db.fetch().items
+# keys = [item['key'] for item in items]
+# for key in keys:
+#     settings_db.delete(key)
+
 # Setup user database
 
-usernames = ["koopie26"]
-names = ["Mark"]
-passwords = ["Gamma00!!"]
+usernames = ["mark", "tyler"]
+names = ["Mark", "Tyler"]
+passwords = ["tsbot", "gammabot"]
 hashed_passwords = stauth.Hasher(passwords).generate() # Encrypt passwords
 
 for i in range(len(usernames)):
@@ -56,6 +64,18 @@ for i in range(len(config_keys)):
         "value": config_values[i]
     }
     config_db.put(entry)
+
+# Setup settings database
+
+settings_keys = ["REFRESH_ON", "REFRESH_SECONDS", "TICKER"]
+settings_values = [True, 60, "SPY"]
+
+for i in range(len(settings_keys)):
+    entry = {
+        "key": settings_keys[i],
+        "value": settings_values[i]
+    }
+    settings_db.put(entry)
 
 # Finish
 

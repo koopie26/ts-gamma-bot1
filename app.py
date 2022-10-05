@@ -7,6 +7,7 @@ import numpy as np # pip install numpy
 import pandas as pd  # pip install pandas
 import plotly.graph_objs as go  # pip install plotly
 import streamlit as st  # pip install streamlit
+from streamlit_autorefresh import st_autorefresh # pip install streamlit-autorefresh
 import streamlit_authenticator as stauth  # pip install streamlit-authenticator
 from tradestation import *
 
@@ -75,17 +76,75 @@ if auth:
 
     deta = connect_db()
     config_db = deta.Base("config_db")
- 
+    settings_db = deta.Base("settings_db")
+
+    # Session state, and autorefresh
+
+    if "ticker" not in st.session_state:
+        st.session_state["ticker"] = settings_db.get("TICKER")['value']
+    if "refresh_str" not in st.session_state:
+        refresh_bool = bool(settings_db.get("REFRESH_ON")['value'])
+        if refresh_bool:
+            refresh_str = "On"
+        else:
+            refresh_str = "Off"
+        st.session_state["refresh_str"] = refresh_str
+    if "refresh_seconds" not in st.session_state:
+        st.session_state["refresh_seconds"] = int(settings_db.get("REFRESH_SECONDS")['value'])
+    if "refresh_str_input" in st.session_state and "refresh_seconds_input" in st.session_state:
+        if st.session_state["refresh_str_input"] == "On":
+            count = st_autorefresh(interval=st.session_state["refresh_seconds_input"]*1000, limit=1000, key="refresh_counter")
+    elif "refresh_str_input" in st.session_state:
+        if st.session_state["refresh_str_input"] == "On":
+            count = st_autorefresh(interval=st.session_state["refresh_seconds"]*1000, limit=1000, key="refresh_counter")
+    elif "refresh_seconds_input" in st.session_state:
+        if st.session_state["refresh_str"] == "On":
+            count = st_autorefresh(interval=st.session_state["refresh_seconds_input"]*1000, limit=1000, key="refresh_counter")
+    else:
+        if st.session_state["refresh_str"] == "On":
+            count = st_autorefresh(interval=st.session_state["refresh_seconds"]*1000, limit=1000, key="refresh_counter")
+    if "ticker_input" not in st.session_state:
+        expirations = get_expirations_ts(st.session_state["ticker"])
+    else:
+        expirations = get_expirations_ts(st.session_state["ticker_input"])
+
+    # Callback functions
+
+    def change_ticker():
+        entry = {}
+        entry["key"] = "TICKER"
+        entry["value"] = st.session_state["ticker_input"]
+        print(entry)
+        settings_db.put(entry)
+
+    def change_refresh_on():
+        entry = {}
+        entry["key"] = "REFRESH_ON"
+        if st.session_state["refresh_str_input"] == "On":
+            entry["value"] = True
+        elif st.session_state["refresh_str_input"] == "Off":
+            entry["value"] = False
+        print(entry)
+        settings_db.put(entry)
+
+    def change_refresh_seconds():
+        entry = {}
+        entry["key"] = "REFRESH_SECONDS"
+        entry["value"] = st.session_state["refresh_seconds_input"]
+        print(entry)
+        settings_db.put(entry)
+
     # ---- SIDEBAR ----
 
     authenticator.logout("Logout", "sidebar")
-    expirations = get_expirations_ts()
     page_options = ["Chart"]
     callput_options = ["Call", "Put", "All"]
     indicator_options = ["Gamma", "Ask", "Bid", "DailyOpenInterest", "Delta", "ImpliedVolatility", "Mid", "Rho", "Theta", "Vega", "Volume"]
+    refresh_options = ["On", "Off"]
+
     with st.sidebar:
 
-        st.title(f"Welcome {name}")
+        # st.title(f"Welcome {name}")
 
         selected_side = st.selectbox(
             label = "Select Page:", 
@@ -95,12 +154,15 @@ if auth:
         if selected_side == "Chart":
             selected_ticker = st.text_input(
                 label = "Ticker:",
-                value = "SPY"
+                value = st.session_state["ticker"],
+                on_change = change_ticker,
+                key = "ticker_input"
             )
             selected_callput = st.radio(
                 label = "Type:",
                 options = callput_options,
-                index = 2
+                index = 2,
+                horizontal = True,
             )
             selected_expiration = st.selectbox(
                 label = "Expiration:", 
@@ -111,6 +173,22 @@ if auth:
                 label = "Indicators:",
                 options = indicator_options,
                 default = "Gamma"
+            )
+            selected_refresh_on = st.radio(
+                label = "Auto-refresh:",
+                options = refresh_options,
+                index = refresh_options.index(st.session_state["refresh_str"]),
+                on_change = change_refresh_on,
+                horizontal = True,
+                key = "refresh_str_input"
+            )
+            selected_refresh_seconds = st.number_input(
+                label = "Auto-refresh seconds:",
+                min_value = 0,
+                value = st.session_state["refresh_seconds"],
+                step = 1,
+                on_change = change_refresh_seconds,
+                key = "refresh_seconds_input"
             )
 
     # Chart page
@@ -182,6 +260,9 @@ if auth:
             ticksuffix=" "
         )
         st.plotly_chart(fig, use_container_width = True)
+
+        time_now = dt.datetime.now(tz=local_timezone).strftime('%Y-%m-%d %X %Z')
+        st.write(f"Last updated: {time_now}")
 
     # ---- HIDE STREAMLIT STYLE ----
     hide_st_style = \
