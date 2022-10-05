@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import requests
+import yfinance as yf
 
 # Global variables
 
@@ -152,6 +153,10 @@ def get_quote_ts(symbol="SPY"):
     content = json.loads(r.content)
     if 'Quotes' not in content:
         print(content)
+        backup_quote = {
+            "Last": yf.Ticker(symbol).info['regularMarketPrice']
+        }
+        return backup_quote
     quotes = content['Quotes']
     if len(quotes) == 1:
         quote = quotes[0]
