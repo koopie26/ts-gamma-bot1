@@ -139,7 +139,9 @@ if auth:
     authenticator.logout("Logout", "sidebar")
     page_options = ["Chart"]
     callput_options = ["Call", "Put", "All"]
-    indicator_options = ["Gamma", "Ask", "Bid", "DailyOpenInterest", "Delta", "ImpliedVolatility", "Mid", "Rho", "Theta", "Vega", "Volume"]
+    indicator_options = ["Gamma Indicator", "Gamma", "Ask", "Bid", "DailyOpenInterest", "Delta", 
+                         "ImpliedVolatility", "Mid", "Rho", "Theta", "Vega", "Volume"]
+    complex_indicators = ["Gamma Indicator"]
     refresh_options = ["On", "Off"]
 
     with st.sidebar:
@@ -172,7 +174,7 @@ if auth:
             selected_indicators = st.multiselect(
                 label = "Indicators:",
                 options = indicator_options,
-                default = "Gamma"
+                default = "Gamma Indicator"
             )
             selected_refresh_on = st.radio(
                 label = "Auto-refresh:",
@@ -233,12 +235,34 @@ if auth:
                     chain1.append(strike1)
                 chain = chain1
                 for indicator in selected_indicators:
-                    y_values = [float(item[indicator]) for item in chain]
-                    fig.add_trace(go.Scatter(
-                        x = pd.Series(strikes),
-                        y = pd.Series(y_values),
-                        name = f"{indicator}, {ext}",
-                    ))
+                    y_values = []
+                    if indicator not in complex_indicators:
+                        y_values = [float(item[indicator]) for item in chain]
+                    elif indicator == "Gamma Indicator":
+                        if calls != [] and puts != []:
+                            gammas = np.array([float(item["Gamma"]) for item in chain])
+                            volumes = np.array([float(item["Volume"]) for item in chain])
+                            ois = np.array([float(item["DailyOpenInterest"]) for item in chain])
+                            if count == 0:
+                                gammas_call = gammas.copy()
+                                volumes_call = volumes.copy()
+                                ois_call = ois.copy()
+                            elif count == 1:
+                                gammas_put = gammas.copy()
+                                volumes_put = volumes.copy()
+                                ois_put = ois.copy()
+                                # y_values = (ois_call - ois_put) * gammas_call
+                                y_values = (volumes_call * gammas_call) - (volumes_put * gammas_put)
+                                st.info(f"{indicator} = (call volume * call gamma) - (put volume * put gamma)", icon="ℹ️")
+                        else:
+                            st.warning(f"{indicator} requires both calls and puts", icon="⚠️")
+                    if y_values != []:
+                        fig.add_trace(go.Scatter(
+                            x = pd.Series(strikes),
+                            y = pd.Series(y_values),
+                            name = f"{indicator}, {ext}",
+                            line_shape="spline",
+                        ))
             count += 1
         # fig.add_vline(x=last, annotation="Last")
         fig.update_layout(
