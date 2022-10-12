@@ -116,6 +116,7 @@ if auth:
         expirations = get_expirations_ts(st.session_state["ticker_input"])
     start_local = pd.Timestamp(time.time(), unit="s", tz=utc).astimezone(local_timezone)
     time_cutoff = dt.datetime(year=start_local.year, month=start_local.month, day=start_local.day, hour=15, minute=1)
+    time_cutoff = pd.Timestamp(time_cutoff, tz=local_timezone)
     if start_local > time_cutoff and expirations[0] == start_local.strftime("%m-%d-%Y"):
         exp_idx = 1
     else:
