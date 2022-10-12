@@ -6,15 +6,22 @@ import datetime as dt # pip install datetime
 import numpy as np # pip install numpy
 import pandas as pd  # pip install pandas
 import plotly.graph_objs as go  # pip install plotly
+import pytz
 import streamlit as st  # pip install streamlit
 from streamlit_autorefresh import st_autorefresh # pip install streamlit-autorefresh
 import streamlit_authenticator as stauth  # pip install streamlit-authenticator
+import time
 from tradestation import *
 
 # Set page config
 
 st.set_page_config(page_title="Gamma Bot", page_icon=":chart_with_upwards_trend:", layout="wide")
 # emojis: https://www.webfx.com/tools/emoji-cheat-sheet/
+
+# Global variables
+
+utc = pytz.timezone("UTC")
+local_timezone = pytz.timezone("US/Central")
 
 # Database connection
 
@@ -107,6 +114,12 @@ if auth:
         expirations = get_expirations_ts(st.session_state["ticker"])
     else:
         expirations = get_expirations_ts(st.session_state["ticker_input"])
+    start_local = pd.Timestamp(time.time(), unit="s", tz=utc).astimezone(local_timezone)
+    time_cutoff = dt.datetime(year=start_local.year, month=start_local.month, day=start_local.day, hour=15, minute=1)
+    if start_local > time_cutoff and expirations[0] == start_local.strftime("%m-%d-%Y"):
+        exp_idx = 1
+    else:
+        exp_idx = 0
 
     # Callback functions
 
@@ -168,7 +181,7 @@ if auth:
             )
             selected_expiration = st.selectbox(
                 label = "Expiration:", 
-                index = 0,
+                index = exp_idx,
                 options = expirations
             )
             selected_indicators = st.multiselect(
