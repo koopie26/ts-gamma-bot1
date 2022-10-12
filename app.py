@@ -139,9 +139,9 @@ if auth:
     authenticator.logout("Logout", "sidebar")
     page_options = ["Chart"]
     callput_options = ["Call", "Put", "All"]
-    indicator_options = ["Gamma Indicator", "Gamma", "Ask", "Bid", "DailyOpenInterest", "Delta", 
+    indicator_options = ["Ask", "Bid", "DailyOpenInterest", "Delta", "Delta Indicator", "Gamma", "Gamma Indicator", 
                          "ImpliedVolatility", "Mid", "Rho", "Theta", "Vega", "Volume"]
-    complex_indicators = ["Gamma Indicator"]
+    complex_indicators = ["Gamma Indicator", "Delta Indicator"]
     refresh_options = ["On", "Off"]
 
     with st.sidebar:
@@ -238,25 +238,32 @@ if auth:
                     y_values = []
                     if indicator not in complex_indicators:
                         y_values = [float(item[indicator]) for item in chain]
-                    elif indicator == "Gamma Indicator":
+                    elif indicator in ["Gamma Indicator", "Delta Indicator"]:
                         if calls != [] and puts != []:
                             gammas = np.array([float(item["Gamma"]) for item in chain])
+                            deltas = np.array([float(item["Delta"]) for item in chain])
                             volumes = np.array([float(item["Volume"]) for item in chain])
                             ois = np.array([float(item["DailyOpenInterest"]) for item in chain])
                             if count == 0:
                                 gammas_call = gammas.copy()
+                                deltas_call = deltas.copy()
                                 volumes_call = volumes.copy()
-                                ois_call = ois.copy()
+                                # ois_call = ois.copy()
                             elif count == 1:
                                 gammas_put = gammas.copy()
+                                deltas_put = deltas.copy()
                                 volumes_put = volumes.copy()
-                                ois_put = ois.copy()
+                                # ois_put = ois.copy()
                                 # y_values = (ois_call - ois_put) * gammas_call
-                                y_values = (volumes_call * gammas_call) - (volumes_put * gammas_put)
-                                st.info(f"{indicator} = (call volume * call gamma) - (put volume * put gamma)", icon="ℹ️")
+                                if indicator == "Gamma Indicator":
+                                    y_values = (volumes_call * gammas_call) - (volumes_put * gammas_put)
+                                    st.info(f"{indicator} = (call volume * call gamma) - (put volume * put gamma)", icon="ℹ️")
+                                elif indicator == "Delta Indicator":
+                                    y_values = (volumes_call * deltas_call) - (volumes_put * deltas_put)
+                                    st.info(f"{indicator} = (call volume * call delta) - (put volume * put delta)", icon="ℹ️")
                         else:
                             st.warning(f"{indicator} requires both calls and puts", icon="⚠️")
-                    if y_values != []:
+                    if list(y_values) != []:
                         fig.add_trace(go.Scatter(
                             x = pd.Series(strikes),
                             y = pd.Series(y_values),
