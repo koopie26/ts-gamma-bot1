@@ -225,4 +225,30 @@ def get_chain_ts(symbol="SPY", expiration=0, optionType="All", strikeProximity=2
     }
     return chain
 
+def get_bars_ts(symbol="SPY"):
+    headers = ts_authenticate()
+    today = dt.datetime.now(tz=local_timezone) - dt.timedelta(days=0)
+    tz_offset = int(float(today.strftime("%z")) / 100)
+    if tz_offset > 0:
+        hour = 24 - tz_offset
+    else:
+        hour = abs(tz_offset)
+    startdate_str = f"{today.year}-{today.month}-{today.day}T0{hour}:00:00Z"
+    startdate = pd.to_datetime(startdate_str).astimezone(local_timezone)
+    url = f'{ts_base}/v3/marketdata/barcharts/{symbol}?unit=Minute&interval=1&barsback=390'
+    r = requests.request("GET", url, headers = headers)
+    resp = json.loads(r.content)
+    if 'Bars' not in resp:
+        print("Error: Bars")
+        return False
+    bars = resp['Bars']
+    timestamps = [pd.to_datetime(bar['TimeStamp']) for bar in bars]
+    i = 0
+    while i < len(timestamps):
+        if timestamps[i] >= startdate:
+            break
+        i += 1
+    bars = bars[i:]
+    return bars
+
 # END

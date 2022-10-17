@@ -153,9 +153,9 @@ if auth:
     authenticator.logout("Logout", "sidebar")
     page_options = ["Chart"]
     callput_options = ["Call", "Put", "All"]
-    indicator_options = ["Ask", "Bid", "DailyOpenInterest", "Delta", "Delta Indicator", "Gamma", "Gamma Indicator", 
+    indicator_options = ["Ask", "Bid", "Cumulative Delta", "DailyOpenInterest", "Delta", "Delta Indicator", "Gamma", "Gamma Indicator", 
                          "ImpliedVolatility", "Mid", "Rho", "Theta", "Vega", "Volume"]
-    complex_indicators = ["Gamma Indicator", "Delta Indicator"]
+    complex_indicators = ["Gamma Indicator", "Delta Indicator", "Cumulative Delta"]
     refresh_options = ["On", "Off"]
 
     with st.sidebar:
@@ -227,74 +227,169 @@ if auth:
 
         # Get chain, sort by strikes, add to figure
 
-        chains = get_chain_ts(selected_ticker, selected_expiration, selected_callput)
-        calls = chains['calls']
-        puts = chains['puts']
-        callputs = [calls, puts]
-        count = 0
-        ext = "Call"
-        for chain in callputs:
-            if count == 1:
-                ext = "Put"
-            if chain != []:
-                strikes = [float(item['Strikes'][0]) for item in chain]
-                strikes_enum = [strike for strike in enumerate(strikes)]
-                strikes_enum_rev = [tuple(reversed(strike)) for strike in strikes_enum]
-                strikes_enum_rev_sort = sorted(strikes_enum_rev)
-                strikes = [strike[0] for strike in strikes_enum_rev_sort]
-                strikes_idx = [strike[1] for strike in strikes_enum_rev_sort]
-                chain1 = []
-                for i in range(len(chain)):
-                    strike1 = chain[strikes_idx[i]]
-                    chain1.append(strike1)
-                chain = chain1
-                for indicator in selected_indicators:
-                    y_values = []
-                    if indicator not in complex_indicators:
-                        y_values = [float(item[indicator]) for item in chain]
-                    elif indicator in ["Gamma Indicator", "Delta Indicator"]:
-                        if calls != [] and puts != []:
-                            gammas = np.array([float(item["Gamma"]) for item in chain])
-                            deltas = np.array([float(item["Delta"]) for item in chain])
-                            volumes = np.array([float(item["Volume"]) for item in chain])
-                            ois = np.array([float(item["DailyOpenInterest"]) for item in chain])
-                            if count == 0:
-                                gammas_call = gammas.copy()
-                                deltas_call = deltas.copy()
-                                volumes_call = volumes.copy()
-                                # ois_call = ois.copy()
-                            elif count == 1:
-                                gammas_put = gammas.copy()
-                                deltas_put = deltas.copy()
-                                volumes_put = volumes.copy()
-                                # ois_put = ois.copy()
-                                # y_values = (ois_call - ois_put) * gammas_call
-                                if indicator == "Gamma Indicator":
-                                    y_values = (volumes_call * gammas_call) - (volumes_put * gammas_put)
-                                    st.info(f"{indicator} = (call volume * call gamma) - (put volume * put gamma)", icon="ℹ️")
-                                elif indicator == "Delta Indicator":
-                                    y_values = (volumes_call * deltas_call) - (volumes_put * deltas_put)
-                                    st.info(f"{indicator} = (call volume * call delta) - (put volume * put delta)", icon="ℹ️")
-                        else:
-                            st.warning(f"{indicator} requires both calls and puts", icon="⚠️")
-                    if list(y_values) != []:
-                        fig.add_trace(go.Scatter(
-                            x = pd.Series(strikes),
-                            y = pd.Series(y_values),
-                            name = f"{indicator}, {ext}",
-                            line_shape="spline",
-                        ))
-            count += 1
-        # fig.add_vline(x=last, annotation="Last")
-        fig.update_layout(
-            title = f'Plotly chart: {selected_ticker} ({last}), {selected_callput} chain for {selected_expiration} expiration date',
-            height = 700,
-            yaxis_title = str(selected_indicators),
-            xaxis_title = 'Strike',
-            plot_bgcolor = 'gainsboro',
-            annotations=[dict(x=last, y=0.99, yref='paper', text='Last', xanchor='left', showarrow=False, font_color="red")],
-            shapes=[dict(x0=last, x1=last, y0=0.01, y1 = 0.99, yref='paper', line_width=1, line_dash="dash", line_color="red")] 
-        )
+        if "Cumulative Delta" not in selected_indicators:
+            chains = get_chain_ts(selected_ticker, selected_expiration, selected_callput)
+            calls = chains['calls']
+            puts = chains['puts']
+            callputs = [calls, puts]
+            count = 0
+            ext = "Call"
+            for chain in callputs:
+                if count == 1:
+                    ext = "Put"
+                if chain != []:
+                    strikes = [float(item['Strikes'][0]) for item in chain]
+                    strikes_enum = [strike for strike in enumerate(strikes)]
+                    strikes_enum_rev = [tuple(reversed(strike)) for strike in strikes_enum]
+                    strikes_enum_rev_sort = sorted(strikes_enum_rev)
+                    strikes = [strike[0] for strike in strikes_enum_rev_sort]
+                    strikes_idx = [strike[1] for strike in strikes_enum_rev_sort]
+                    chain1 = []
+                    for i in range(len(chain)):
+                        strike1 = chain[strikes_idx[i]]
+                        chain1.append(strike1)
+                    chain = chain1
+                    for indicator in selected_indicators:
+                        y_values = []
+                        bars = []
+                        if indicator not in complex_indicators:
+                            y_values = [float(item[indicator]) for item in chain]
+                        elif indicator in ["Gamma Indicator", "Delta Indicator"]:
+                            if calls != [] and puts != []:
+                                gammas = np.array([float(item["Gamma"]) for item in chain])
+                                deltas = np.array([float(item["Delta"]) for item in chain])
+                                volumes = np.array([float(item["Volume"]) for item in chain])
+                                ois = np.array([float(item["DailyOpenInterest"]) for item in chain])
+                                if count == 0:
+                                    gammas_call = gammas.copy()
+                                    deltas_call = deltas.copy()
+                                    volumes_call = volumes.copy()
+                                    # ois_call = ois.copy()
+                                elif count == 1:
+                                    gammas_put = gammas.copy()
+                                    deltas_put = deltas.copy()
+                                    volumes_put = volumes.copy()
+                                    # ois_put = ois.copy()
+                                    # y_values = (ois_call - ois_put) * gammas_call
+                                    if indicator == "Gamma Indicator":
+                                        y_values = (volumes_call * gammas_call) - (volumes_put * gammas_put)
+                                        st.info(f"{indicator} = (call volume * call gamma) - (put volume * put gamma)", icon="ℹ️")
+                                    elif indicator == "Delta Indicator":
+                                        y_values = (volumes_call * deltas_call) - (volumes_put * deltas_put)
+                                        st.info(f"{indicator} = (call volume * call delta) - (put volume * put delta)", icon="ℹ️")
+                            else:
+                                st.warning(f"{indicator} requires both calls and puts", icon="⚠️")
+                        if list(y_values) != []:
+                            fig.add_trace(go.Scatter(
+                                x = pd.Series(strikes),
+                                y = pd.Series(y_values),
+                                name = f"{indicator}, {ext}",
+                                line_shape="spline",
+                            ))      
+                count += 1
+            # fig.add_vline(x=last, annotation="Last")
+            fig.update_layout(
+                title = f'Plotly chart: {selected_ticker} ({last}), {selected_callput} chain for {selected_expiration} expiration date',
+                height = 700,
+                yaxis_title = str(selected_indicators),
+                xaxis_title = 'Strike',
+                plot_bgcolor = 'gainsboro',
+                annotations=[dict(x=last, y=0.99, yref='paper', text='Last', xanchor='left', showarrow=False, font_color="red")],
+                shapes=[dict(x0=last, x1=last, y0=0.01, y1 = 0.99, yref='paper', line_width=1, line_dash="dash", line_color="red")] 
+            )
+        elif "Cumulative Delta" in selected_indicators:
+            bars = get_bars_ts()
+            deltas, cumdeltas, timestamps = [], [], []
+            for bar in bars:
+                opn = float(bar['Open'])
+                high = float(bar['High'])
+                low = float(bar['Low'])
+                close = float(bar['Close'])
+                volume = float(bar['TotalVolume'])
+                timestamp = pd.to_datetime(bar['TimeStamp']).astimezone(local_timezone).strftime("%H:%M")
+                timestamps.append(timestamp)
+            #     tw = high - max(opn, close) 
+            #     bw = min(opn, close) - low
+            #     body = abs(close - opn) 
+            #     def _rate(cond):
+            #         if cond:
+            #             ret = 0.5 * (tw + bw + (2 * body)) / (tw + bw + body)
+            #         else:
+            #             ret = 0.5 * (tw + bw + (0)) / (tw + bw + body)
+            #         if ret in [0, None]:
+            #             ret = 0.5
+            #         return ret
+            #     deltaup =  volume * _rate(opn <= close) 
+            #     deltadown = volume * _rate(opn > close)
+                deltaup = float(bar['UpVolume'])
+                deltadown = float(bar['DownVolume'])
+                if close >= opn:
+                    delta = deltaup
+                else:
+                    delta = -deltadown
+                deltas.append(delta)
+            cumdeltas, os, hs, ls, cs = [0], [0], [0], [0], [0]
+            i = 1
+            while i < len(deltas):
+                cumdelta = int(cumdeltas[i-1] + deltas[i-1])
+                cumdeltas.append(cumdelta)
+                o = int(np.round(cumdeltas[i-1], 0))
+                h = int(np.round(max(cumdeltas[i], cumdeltas[i-1]), 0))
+                l = int(np.round(min(cumdeltas[i], cumdeltas[i-1]), 0))
+                c = int(np.round(cumdeltas[i], 0))
+                os.append(o)
+                hs.append(h)
+                ls.append(l)
+                cs.append(c)
+                i += 1
+            use_ha = True
+            if use_ha:
+                ha_opens = [None] * len(os)
+                ha_highs = [None] * len(hs)
+                ha_lows = [None] * len(ls)
+                ha_closes = [None] * len(cs)
+                ha_closes[0] = 0.25 * (os[0] + hs[0] + ls[0] + cs[0])
+                ha_opens[0] = os[0]
+                ha_highs[0] = max(hs[0], os[0], cs[0])
+                ha_lows[0] = min(ls[0], os[0], cs[0])
+                i = 1
+                while i < len(ha_closes):
+                    ha_opens[i] = 0.5 * (ha_opens[i-1] + ha_closes[i-1])
+                    ha_highs[i] = max(hs[i], ha_opens[i], cs[i])
+                    ha_lows[i] = min(ls[i], ha_opens[i], cs[i])
+                    ha_closes[i] = 0.25 * (ha_opens[i] + hs[i] + ls[i] + cs[i])
+                    i += 1
+                os = ha_opens
+                hs = ha_highs
+                ls = ha_lows
+                cs = ha_closes
+            timestamps = [""] + timestamps
+            os = [""] + os
+            hs = [""] + hs
+            ls = [""] + ls
+            cs = [""] + cs
+            df = pd.DataFrame()
+            df["t"] = timestamps
+            df["o"] = os
+            df["h"] = hs
+            df["l"] = ls
+            df["c"] = cs
+            blank = pd.Series(" ")
+            fig.add_trace(go.Candlestick(
+                x = pd.Series(pd.concat([df['t'], blank], ignore_index=True)),
+                open = pd.Series(pd.concat([df['o'], blank], ignore_index=True)),
+                high = pd.Series(pd.concat([df['h'], blank], ignore_index=True)),
+                low = pd.Series(pd.concat([df['l'], blank], ignore_index=True)),
+                close = pd.Series(pd.concat([df['c'], blank], ignore_index=True)),
+                name = 'Candles',
+            ))
+            fig.update_layout(
+                title = f'Plotly chart: {selected_ticker} ({last}): Cumulative Delta',
+                height = 700,
+                yaxis_title = "Cumulative Delta",
+                xaxis_title = 'Time',
+                plot_bgcolor = 'gainsboro',
+            )
         fig.update_xaxes(
             rangeslider_visible=False,
             showgrid=False,
